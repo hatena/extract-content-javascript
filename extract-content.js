@@ -10,8 +10,31 @@ extractContent = function(d) {
                 }
             }
             return obj;
+        },
+        matchCount: function(text, regex) {
+            return text.split(regex).length - 1;
+//             var n=0;
+//             for (var i=0;;) {
+//                 i = text.search(regex);
+//                 if (i < 0) break;
+//                 n++;
+//                 text = text.substr(i+1);
+//             }
+//             return n;
+        },
+        matchCountTagAttr: function(node, tag, attr, regex) {
+            if (node.tagName == tag && regex.test(node[attr])) {
+                return 1;
+            }
+            var n=0;
+            var children = node.childNodes;
+            for (var i=0, len=children.length; i < len; i++) {
+                n += Util.matchCountTagAttr(children[i], tag, attr, regex);
+            }
+            return n;
         }
     };
+
     var A = {};
     A.indexOf = Array.indexOf || function(self, elt/*, from*/) {
         var argi = 1;
@@ -128,6 +151,9 @@ extractContent = function(d) {
     A.last = function(self) {
         return self ? self[self.length-1] : null;
     };
+    A.push = function(self, other) {
+        return Array.prototype.push.apply(self, other);
+    };
 
     var DOM = {
         ancestors: function(e) {
@@ -150,13 +176,17 @@ extractContent = function(d) {
             }
             return r;
         },
+        tagMatch: function(node, regexs) {
+            return regexs.some(function(v){ return v == node.tagName; });
+        }
     };
 
     var LayeredExtractor = function() {
     };
 
-    var Heuristics = function(/*opt, pattern*/) {
+    var Heuristics = function(/*option, pattern*/) {
         var self = {
+            content: [],
             opt: Util.inherit(arguments[0], {
                 threshold: 60,
                 minLength: 30,
@@ -172,8 +202,16 @@ extractContent = function(d) {
             }),
             pat: Util.inherit(arguments[1], {
                 sep: [ 'div', 'center', 'td' ],
-                waste: /Copyright|All\s*Rights?\s*Reserved?/i,
-                affiliate: /amazon[a-z0-9\.\/\-\?&]+-22/i,
+                waste: [
+                        /Copyright|All\s*Rights?\s*Reserved?/i
+                ],
+                affiliate: [
+                    /amazon[a-z0-9\.\/\-\?&]+-22/i
+                ],
+                list: [ 'ul', 'dl', 'ol' ],
+                li:   [ 'li', 'dd' ],
+                a:    [ 'a' ],
+                form: [ 'form' ],
                 noContent: [ 'frameset' ],
                 ignore: [
                     'script',
@@ -185,102 +223,252 @@ extractContent = function(d) {
                         'class': [ 'more', 'menu', 'side', 'navi' ]
                     } ]
                 ],
+                punctuations: /[。、．，！？]|\.[^A-Za-z0-9]|,[^0-9]|!|\?/,
             })
         };
 
-        var Block = Util.inherit(function(parent, nodes) {
-            var block = { parent: parent, nodes: nodes };
-            block.isLinkList = function() {
-                /* TODO */
+        var Block = Util.inherit(function(nodes) {
+            var block = { nodes: nodes };
+
+            // TODO: eliminate_useless_symbols
+            // TODO: eliminate_useless_tags
+            block.eliminateLinks = function() {
+                // _nolink
+                var hasHref = function(node) {
+                    if (node.href) return true;
+                    var children = node.childNodes;
+                    var len = children.length;
+                    for (var i=0; i < len; i++) {
+                        if (hasHref(children[i])) return true;
+                    }
+                    return false;
+                };
+                var st = { // statistics
+                    noLinkText: '', // does not contain links and forms
+                    listTextLength: 0,
+                    noListTextLength: 0,
+                    listCount: 0,
+                    linkListCount: 0,
+                };
+                var rec = function(node, insideList, insideLink, insideForm) {
+                    insideList ||= DOM.tagMatch(node, self.pat.list);
+                    var listItem = DOM.tagMatch(node, self.pat.li);
+                    var linkItem = DOM.tagMatch(node, self.pat.a);
+                    var formItem = DOM.tagMatch(node, self.pat.form);
+                    insideLink ||= linkItem;
+                    insideForm ||= formItem;
+
+                    if (listItem) {
+                        st.listCount++;
+                        if (hasHref(node)) { // TODO
+                            st.linkListCount++;
+                        }
+                    } else if (linkItem) {
+                        st.linkCount++;
+                    }
+
+                    var children = node.childNodes;
+                    var len = children.length;
+                    if (!len) { // leaf
+                        var t = node.textContent || '';
+                        var l = t.length;
+                        if (!insideLink && !insideForm) {
+                            st.noLinkText += t;
+                        }
+                        if (insideList) {
+                            st.listTextLength += l;
+                        } else {
+                            st.noListTextLength += l;
+                        }
+                        return;
+                    }
+
+                    for (var i=0; i < len; i++) {
+                        rec(children[i], insideList, insideLink, insideForm);
+                    }
+                };
+
+                block.nodes.forEach(function(v){ rec(v); });
+
+                if (st.noLinkText.length < self.opt.minNoLink * st.linkCount) {
+                    return '';
+                }
+
+                // isLinklist
+                var rate = st.linkListCount / (listCount || 1);
+                var rate *= rate;
+                var limit = self.opt.noListRatio * rate * st.listTextLength;
+                if (st.noLinkText.length < limit) {
+                    return '';
+                }
+
+                return st.noLinkText;
             };
-            block.score = function(factor, continuous) {
-                /* TODO */
+            block.noBodyRate = function() {
+                var val=0;
+
+                val += block.nodes.reduce(function(prev, curr) {
+                    return prev + Util.matchCountTagAttr(curr, 'a', 'href',
+                                                         self.pat.affiliate);
+                }, 0);
+                val /= 2.0;
+
+                val += self.pat.waste.reduce(function(prev,curr) {
+                    return prev + Util.matchCount(block._nolink, curr);
+                }, 0);
+
+                return val;
             };
+
+            block.calcScore = function(factor, continuous) {
+                // ignore link list block
+                block._nolink = block.eliminateLinks();
+
+                var c = block._nolink.length;
+                c += + Util.matchCount(block._nolink, self.pat.punctuations);
+                c *= self.opt.punctuationWeight * factor;
+
+                // anti-scoring factors
+                var noBodyRate = block.noBodyRate();
+
+                // scores
+                c *= Math.pow(self.opt.factor.noBody, noBodyRate);
+                block._c = block.score = c;
+                block._c1 = c * continuous;
+                return c;
+            };
+
+            block.isAccepted = function() {
+                return block._c > self.opt.threshold;
+            };
+
+            block.isContinuous = function() {
+                return block._c1 > self.opt.threshold;
+            };
+
+            block.merge = function(other) {
+                block.score += other._c1;
+                A.push(block.nodes, other.nodes);
+                return block;
+            };
+
             return block;
         }, {
-            split: function(node, sep) {
+            split: function(node) {
                 var r = [];
                 var buf = [];
-                var flush = function() {
-                    if(buf.length) {
-                        r.push(new Block(node, buf));
+
+                var flush = function(flag) {
+                    if (flag && buf.length) {
+                        r.push(new Block(buf));
                         buf = [];
                     }
                 };
-                var children = node.childNodes;
-                for (var i=0, len=children.length; i < len; i++) {
-                    var c = children[i];
-                    if (A.some(sep,function(v){return v==c.tagName;})) {
-                        flush();
-                        var rec = Block.split(c);
-                        if (rec.length) {
-                            Array.prototype.push.apply(r, rec);
+
+                var rec = function(node, r, buf) { // depth-first recursion
+                    var children = node.childNodes;
+                    var sep = self.pat.sep;
+                    for (var i=0, len=children.length; i < len; i++) {
+                        var c = children[i];
+                        var f = A.some(sep,function(v){return v==c.tagName;});
+                        var target = f ? r : buf;
+                        flush(f);
+                        var rr = rec(c, r, buf);
+                        if (rr.length) {
+                            A.push(target, rr);
                         }
-                    } else {
-                        buf.push(c);
+                        flush(f);
                     }
-                }
-                flush();
+                    if (!len) buf.push(c);
+                    return r;
+                };
+
+                rec(node, r, buf);
+                flush(true);
+
                 return r;
             }
         });
 
         self.extract = function(d) {
-            if (A.some(self.pat.noContent, function(v){
+            var isNoContent = function(v){
                 return d.getElementsByTagName(v).length != 0;
-            })) {
-                return;
-            }
+            };
+            if (A.some(self.pat.noContent, isNoContent)) return;
 
             var factor = 1.0;
             var continuous = 1.0;
             var score = 0;
-            // eliminate_useless_symbols
-            // eliminate_useless_tags
 
-            var result = [];
+            var res = [];
             var blocks = Block.split(d.body);
+            var last;
 
             for (var i=0, len=blocks.length; i < len; i++) {
                 var block = blocks[i];
-                if (body) continuous /= self.opt.factor.continuous; // FIXME
-
-                // ignore link list block
-                if (block.isLinklist()) continue;
+                if (last) {
+                    continuous /= self.opt.factor.continuous;
+                }
 
                 // score
-                var c = block.score(factor, continuous);
+                block.calcScore(factor, continuous);
                 factor *= self.opt.factor.decay;
 
                 // clustor scoring
-                if (block.isContinuous) {
-                    // FIXME: flag?
-                    var last = A.last(result);
-                    if (last) {
+                if (block.isAccepted()) {
+                    if (block.isContinuous() && last) {
                         last.merge(block);
                     } else {
-                        result.push(block);
+                        last = block;
+                        res.push(block);
                     }
                     continuous = self.opt.factor.continuous;
-                } else if (block.isAccepted()) {
-                    // FIXME: flag?
                 } else { // rejected
+                    if (!last) {
+                        // do not decay if no block is pushed
+                        factor = 1.0
+                    }
                 }
             }
+
+            var best = res.sort(function(a,b){return a.score-b.score;}).last();
+            if (best) self.content = best.nodes;
+
+            return self;
+        };
+
+        self.asNode = function() {
+            return self.content.reduce(function(prev,curr) {
+                return DOM.commonAncestor(prev,curr);
+            });
+        };
+
+        self.asNodeArray = function() {
+            return self.content;
+        };
+
+        self.asText = function() {
+            return self.content.reduce(function(prev,curr) {
+                return prev + curr.textContent;
+            }, '');
         };
 
         return self;
     };
 
-    var e1 = d.getElementsByTagName('h1')[0];
-    var e2 = d.getElementsByTagName('h1')[0];
-    var e = DOM.commonAncestor(e1,e2);
-    alert(e);
+    var extractor = new Heuristics();
+    return extractor.extract().asNode();
+
+//     var e1 = d.getElementsByTagName('h1')[0];
+//     var e2 = d.getElementsByTagName('h1')[0];
+//     var e = DOM.commonAncestor(e1,e2);
+//     alert(e);
 
     // test
 //     var e = d.createElement('a');
 //     e.href = 'http://orezdnu.org/';
 //     var text = d.createTextNode('orezdnu.org');
 //     e.appendChild(text);
-    return e;
+
+//     return e;
 };
