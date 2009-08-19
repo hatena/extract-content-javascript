@@ -1,4 +1,4 @@
-extractContent = function(d) {
+var extractContent = function(d) {
     if (!d.body) return null;
 
     var Util = {
@@ -22,16 +22,34 @@ extractContent = function(d) {
 //             }
 //             return n;
         },
-        matchCountTagAttr: function(node, tag, attr, regex) {
-            if (node.tagName == tag && regex.test(node[attr])) {
+        matchCountTagAttr: function(node, tag, attr, regexs) {
+            var test = function(v){ return v.test(node[attr]); };
+            if ((node.tagName||'').toLowerCase() == tag && regexs.some(test)) {
                 return 1;
             }
             var n=0;
             var children = node.childNodes;
             for (var i=0, len=children.length; i < len; i++) {
-                n += Util.matchCountTagAttr(children[i], tag, attr, regex);
+                n += Util.matchCountTagAttr(children[i], tag, attr, regexs);
             }
             return n;
+        },
+        dump: function(obj) {
+            if (typeof obj == 'undefined')  return 'undefined';
+            if (typeof obj == 'string') return '"' + obj + '"';
+            if (typeof obj != 'object') return ''+obj;
+            if (obj === null) return 'null';
+            if (obj instanceof Array) {
+                return '['
+                    + obj.map(function(v){return 'obj'/*Util.dump(v)*/;}).join(',')
+                    + ']';
+            } else {
+                var arr = [];
+                for (var prop in obj) {
+                    arr.push(prop + ':' + 'obj'/*Util.dump(obj[prop])*/);
+                }
+                return '{' + arr.join(',') + '}';
+            }
         }
     };
 
@@ -168,8 +186,8 @@ extractContent = function(d) {
             return r; // [e .. document.body]
         },
         commonAncestor: function(e1, e2) {
-            var a1 = Util.ancestors(e1).reverse();
-            var a2 = Util.ancestors(e2).reverse();
+            var a1 = DOM.ancestors(e1).reverse();
+            var a2 = DOM.ancestors(e2).reverse();
             var r = null;
             for (var i=0; a1[i] && a2[i] && a1[i] == a2[i]; i++) {
                 r = a1[i];
@@ -177,7 +195,9 @@ extractContent = function(d) {
             return r;
         },
         tagMatch: function(node, regexs) {
-            return regexs.some(function(v){ return v == node.tagName; });
+            return regexs.some(function(v){
+                return v == (node.tagName||'').toLowerCase();
+            });
         }
     };
 
@@ -223,7 +243,7 @@ extractContent = function(d) {
                         'class': [ 'more', 'menu', 'side', 'navi' ]
                     } ]
                 ],
-                punctuations: /[。、．，！？]|\.[^A-Za-z0-9]|,[^0-9]|!|\?/,
+                punctuations: /[。、．，！？]|\.[^A-Za-z0-9]|,[^0-9]|!|\?/
             })
         };
 
@@ -233,7 +253,6 @@ extractContent = function(d) {
             // TODO: eliminate_useless_symbols
             // TODO: eliminate_useless_tags
             block.eliminateLinks = function() {
-                // _nolink
                 var hasHref = function(node) {
                     if (node.href) return true;
                     var children = node.childNodes;
@@ -248,19 +267,19 @@ extractContent = function(d) {
                     listTextLength: 0,
                     noListTextLength: 0,
                     listCount: 0,
-                    linkListCount: 0,
+                    linkListCount: 0
                 };
                 var rec = function(node, insideList, insideLink, insideForm) {
-                    insideList ||= DOM.tagMatch(node, self.pat.list);
+                    insideList = insideList||DOM.tagMatch(node, self.pat.list);
                     var listItem = DOM.tagMatch(node, self.pat.li);
                     var linkItem = DOM.tagMatch(node, self.pat.a);
                     var formItem = DOM.tagMatch(node, self.pat.form);
-                    insideLink ||= linkItem;
-                    insideForm ||= formItem;
+                    insideLink = insideLink||linkItem;
+                    insideForm = insideForm||formItem;
 
                     if (listItem) {
                         st.listCount++;
-                        if (hasHref(node)) { // TODO
+                        if (hasHref(node)) {
                             st.linkListCount++;
                         }
                     } else if (linkItem) {
@@ -288,19 +307,24 @@ extractContent = function(d) {
                     }
                 };
 
-                block.nodes.forEach(function(v){ rec(v); });
+                block.nodes.forEach(function(v){
+                    rec(v, false, false, false);
+                });
 
-                if (st.noLinkText.length < self.opt.minNoLink * st.linkCount) {
-                    return '';
-                }
+                    var nolinklen = st.noLinkText.length;
+                    var links = st.linkCount;
+                    var listlen = st.listTextLength;
+                    if (nolinklen < self.opt.minNoLink * links) {
+                        return '';
+                    }
 
-                // isLinklist
-                var rate = st.linkListCount / (listCount || 1);
-                var rate *= rate;
-                var limit = self.opt.noListRatio * rate * st.listTextLength;
-                if (st.noLinkText.length < limit) {
-                    return '';
-                }
+                    // isLinklist
+                    var rate = st.linkListCount / (st.listCount || 1);
+                    rate *= rate;
+                    var limit = self.opt.noListRatio * rate * listlen;
+                    if (nolinklen < limit) {
+                        return '';
+                    }
 
                 return st.noLinkText;
             };
@@ -365,25 +389,22 @@ extractContent = function(d) {
                     }
                 };
 
-                var rec = function(node, r, buf) { // depth-first recursion
+                var rec = function(node) { // depth-first recursion
                     var children = node.childNodes;
                     var sep = self.pat.sep;
-                    for (var i=0, len=children.length; i < len; i++) {
+                    var len = children.length;
+                    for (var i=0; i < len; i++) {
                         var c = children[i];
-                        var f = A.some(sep,function(v){return v==c.tagName;});
-                        var target = f ? r : buf;
+                        var f = DOM.tagMatch(c, sep);
                         flush(f);
-                        var rr = rec(c, r, buf);
-                        if (rr.length) {
-                            A.push(target, rr);
-                        }
+                        rec(c, r, buf);
                         flush(f);
                     }
-                    if (!len) buf.push(c);
+                    if (!len) buf.push(node);
                     return r;
                 };
 
-                rec(node, r, buf);
+                rec(node);
                 flush(true);
 
                 return r;
@@ -394,7 +415,7 @@ extractContent = function(d) {
             var isNoContent = function(v){
                 return d.getElementsByTagName(v).length != 0;
             };
-            if (A.some(self.pat.noContent, isNoContent)) return;
+            if (A.some(self.pat.noContent, isNoContent)) return self;
 
             var factor = 1.0;
             var continuous = 1.0;
@@ -404,6 +425,7 @@ extractContent = function(d) {
             var blocks = Block.split(d.body);
             var last;
 
+            alert(blocks.length);
             for (var i=0, len=blocks.length; i < len; i++) {
                 var block = blocks[i];
                 if (last) {
@@ -431,7 +453,7 @@ extractContent = function(d) {
                 }
             }
 
-            var best = res.sort(function(a,b){return a.score-b.score;}).last();
+            var best=A.first(res.sort(function(a,b){return b.score-a.score;}));
             if (best) self.content = best.nodes;
 
             return self;
@@ -457,7 +479,16 @@ extractContent = function(d) {
     };
 
     var extractor = new Heuristics();
-    return extractor.extract().asNode();
+
+//     return d.createTextNode(extractor.extract(d).asText());
+
+//     var node = extractor.extract(d).asNode();
+//     alert(node.tagName);
+//     return node.cloneNode(true);
+
+    return d.createTextNode(extractor.extract(d).asNodeArray().map(function(v){
+        return v.tagName||v.textContent||'';
+    }).join(', '));
 
 //     var e1 = d.getElementsByTagName('h1')[0];
 //     var e2 = d.getElementsByTagName('h1')[0];
