@@ -5,13 +5,13 @@ var extractContent = function(d) {
         inherit: function(child,parent) {
             var obj = child || {};
             for (var prop in parent) {
-                if (typeof(obj[prop] == 'undefined')) {
+                if (typeof obj[prop] == 'undefined') {
                     obj[prop] = parent[prop];
                 }
             }
             return obj;
         },
-        matchCount: function(text, regex) {
+        countMatch: function(text, regex) {
             return text.split(regex).length - 1;
 //             var n=0;
 //             for (var i=0;;) {
@@ -21,18 +21,6 @@ var extractContent = function(d) {
 //                 text = text.substr(i+1);
 //             }
 //             return n;
-        },
-        matchCountTagAttr: function(node, tag, attr, regexs) {
-            var test = function(v){ return v.test(node[attr]); };
-            if ((node.tagName||'').toLowerCase() == tag && regexs.some(test)) {
-                return 1;
-            }
-            var n=0;
-            var children = node.childNodes;
-            for (var i=0, len=children.length; i < len; i++) {
-                n += Util.matchCountTagAttr(children[i], tag, attr, regexs);
-            }
-            return n;
         },
         dump: function(obj) {
             if (typeof obj == 'undefined')  return 'undefined';
@@ -163,6 +151,21 @@ var extractContent = function(d) {
         }
         return rv;
     };
+    A.zip = function(self) {
+        if (self[0] instanceof Array) {
+            var l = self[0].length;
+            var len = self.length;
+            var z = new Array(l);
+            for (var i=0; i < l; i++) {
+                z[i] = [];
+                for (var j=0; j < len; j++) {
+                    z[i].push(self[j][i]);
+                }
+            }
+            return z;
+        }
+        return [];
+    };
     A.first = function(self) {
         return self ? self[0] : null;
     };
@@ -174,6 +177,24 @@ var extractContent = function(d) {
     };
 
     var DOM = {
+        getElementStyle: function(elem, prop) {
+            var style = elem.style ? elem.style[prop] : null;
+            if (!style) {
+                var dv = document.defaultView;
+                if (dv && dv.getComputedStyle) {
+                    try {
+                        var styles = dv.getComputedStyle(elem, null);
+                    } catch(e) {
+                        return null;
+                    }
+                    prop = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+                    style = styles ? styles.getPropertyValue(prop) : null;
+                } else if (elem.currentStyle) {
+                    style = elem.currentStyle[prop];
+                }
+            }
+            return style;
+         },
         ancestors: function(e) {
             var body = e.ownerDocument.body;
             var r = [];
@@ -194,10 +215,74 @@ var extractContent = function(d) {
             }
             return r;
         },
-        tagMatch: function(node, regexs) {
-            return regexs.some(function(v){
-                return v == (node.tagName||'').toLowerCase();
+        countMatchTagAttr: function(node, tag, attr, regexs) {
+            var test = function(v){ return v.test(node[attr]); };
+            if ((node.tagName||'').toLowerCase()==tag && A.some(regexs,test)) {
+                return 1;
+            }
+            var n=0;
+            var children = node.childNodes;
+            for (var i=0, len=children.length; i < len; i++) {
+                n += DOM.countMatchTagAttr(children[i], tag, attr, regexs);
+            }
+            return n;
+        },
+        matchTag: function(node, pat) {
+            return A.some(pat, function(v){
+                if (typeof v == 'string') {
+                    return v == (node.tagName||'').toLowerCase();
+                } else if (v instanceof Array) {
+                    return v[0] == (node.tagName||'').toLowerCase()
+                        && DOM.matchAttr(node, v[1]);
+                } else {
+                    return false;
+                }
             });
+        },
+        matchAttr: function(node, pat) {
+            var test = function(pat, val) {
+                if (typeof pat == 'string') {
+                    return pat == val;
+                } else if (pat instanceof RegExp) {
+                    return pat.test(val);
+                } else if (pat instanceof Array) {
+                    return A.some(pat,function(v){return test(v,val);});
+                } else if (pat instanceof Object) {
+                    for (var prop in pat) {
+                        var n = node[prop];
+                        if (n && DOM.matchAttr(n, pat[prop])) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+            for (var prop in pat) {
+                var attr = node[prop];
+                var ar = pat[prop];
+                if (attr) {
+                    return test(ar, attr);
+                }
+            }
+            return false;
+        },
+        matchStyle: function(node, pat) {
+            var test = function(pat, val) {
+                if (typeof pat == 'string') {
+                    return pat == val;
+                } else if (pat instanceof RegExp) {
+                    return pat.test(val);
+                } else if (pat instanceof Array) {
+                    return A.some(pat,function(v){return test(v,val);});
+                }
+                return false;
+            };
+            for (var prop in pat) {
+                if (test(pat[prop], DOM.getElementStyle(node, prop))) {
+                    return true;
+                }
+            }
+            return false;
         }
     };
 
@@ -211,17 +296,20 @@ var extractContent = function(d) {
                 threshold: 60,
                 minLength: 30,
                 factor: {
-                    decay:      0.75,
+                    decay:      0.90,
                     noBody:     0.72,
-                    continuous: 1.62
+                    continuous: 1.62,
                 },
                 punctuationWeight: 10,
                 minNoLink: 8,
                 noListRatio: 0.2,
-                debug: 0
+                debug: false
             }),
             pat: Util.inherit(arguments[1], {
-                sep: [ 'div', 'center', 'td' ],
+                sep: [
+                    'div', 'center', 'td',
+                    'h1', 'h2'
+                     ],
                 waste: [
                         /Copyright|All\s*Rights?\s*Reserved?/i
                 ],
@@ -234,113 +322,113 @@ var extractContent = function(d) {
                 form: [ 'form' ],
                 noContent: [ 'frameset' ],
                 ignore: [
+                    'iframe',
+                    'img',
                     'script',
                     'style',
                     'select',
                     'noscript',
                     [ 'div', {
-                        'id': [ 'more', 'menu', 'side', 'navi' ],
-                        'class': [ 'more', 'menu', 'side', 'navi' ]
+                        id: [ /more/, /menu/, /side/, /navi/ ],
+                        className: [ /more/, /menu/, /side/, /navi/ ]
                     } ]
                 ],
+                ignoreStyle: {
+                    display: 'none'
+                },
                 punctuations: /[。、．，！？]|\.[^A-Za-z0-9]|,[^0-9]|!|\?/
             })
         };
 
-        var Block = Util.inherit(function(nodes) {
-            var block = { nodes: nodes };
+        var Leaf = Util.inherit(function(node, depth, inside) {
+            var leaf = { node: node, depth: depth, inside: inside };
 
-            // TODO: eliminate_useless_symbols
-            // TODO: eliminate_useless_tags
-            block.eliminateLinks = function() {
-                var hasHref = function(node) {
-                    if (node.href) return true;
-                    var children = node.childNodes;
-                    var len = children.length;
-                    for (var i=0; i < len; i++) {
-                        if (hasHref(children[i])) return true;
-                    }
-                    return false;
+            leaf.statistics = function() {
+                var t = (node.textContent || '').replace(/\s+/g, ' ');
+                var l = t.length;
+                return {
+                    text: t,
+                    noLinkText: (inside.link || inside.form) ? '' : t,
+                    listTextLength: inside.list ? l : 0,
+                    noListTextLength: inside.list ? 0 : l,
+                    linkCount: inside.link ? 1 : 0,
+                    listCount: inside.li ? 1 : 0,
+                    linkListCount: (inside.li && inside.link) ? 1 : 0
                 };
-                var st = { // statistics
-                    noLinkText: '', // does not contain links and forms
-                    listTextLength: 0,
-                    noListTextLength: 0,
-                    listCount: 0,
-                    linkListCount: 0
-                };
-                var rec = function(node, insideList, insideLink, insideForm) {
-                    insideList = insideList||DOM.tagMatch(node, self.pat.list);
-                    var listItem = DOM.tagMatch(node, self.pat.li);
-                    var linkItem = DOM.tagMatch(node, self.pat.a);
-                    var formItem = DOM.tagMatch(node, self.pat.form);
-                    insideLink = insideLink||linkItem;
-                    insideForm = insideForm||formItem;
+            };
 
-                    if (listItem) {
-                        st.listCount++;
-                        if (hasHref(node)) {
-                            st.linkListCount++;
-                        }
-                    } else if (linkItem) {
-                        st.linkCount++;
-                    }
-
-                    var children = node.childNodes;
-                    var len = children.length;
-                    if (!len) { // leaf
-                        var t = node.textContent || '';
-                        var l = t.length;
-                        if (!insideLink && !insideForm) {
-                            st.noLinkText += t;
-                        }
-                        if (insideList) {
-                            st.listTextLength += l;
-                        } else {
-                            st.noListTextLength += l;
-                        }
-                        return;
-                    }
-
-                    for (var i=0; i < len; i++) {
-                        rec(children[i], insideList, insideLink, insideForm);
-                    }
-                };
-
-                block.nodes.forEach(function(v){
-                    rec(v, false, false, false);
+            return leaf;
+        }, {
+            commonAncestor: function(/* leaves */) {
+                var ar = A.map(arguments, function(v){ return v.node; });
+                if (ar.length < 2) {
+                    return ar[0];
+                }
+                return A.reduce(ar, function(prev, curr) {
+                    return DOM.commonAncestor(prev, curr);
                 });
+            },
+            mergeStatistics: function(a, b) {
+                var r = {};
+                for (var prop in a) {
+                    r[prop] = a[prop] + b[prop];
+                }
+                return r;
+            }
+        });
 
-                    var nolinklen = st.noLinkText.length;
-                    var links = st.linkCount;
-                    var listlen = st.listTextLength;
-                    if (nolinklen < self.opt.minNoLink * links) {
-                        return '';
-                    }
+        var Block = Util.inherit(function(leaves) {
+            leaves = A.filter(leaves, function(v) {
+                var s = v.node.textContent || '';
+                s = s.replace(/\s+/g, '');
+                return s.length != 0;
+            });
+            var n = leaves.length;
+            var block = { leaves: leaves };
 
-                    // isLinklist
-                    var rate = st.linkListCount / (st.listCount || 1);
-                    rate *= rate;
-                    var limit = self.opt.noListRatio * rate * listlen;
-                    if (nolinklen < limit) {
-                        return '';
-                    }
+            block.eliminateLinks = function() {
+                var st = A.map(block.leaves, function(v){
+                    return v.statistics();
+                });
+                if (!st.length) return '';
+                if (st.length == 1) {
+                    st = st[0];
+                } else {
+                    st = A.reduce(st, function(prev, curr) {
+                        return Leaf.mergeStatistics(prev, curr);
+                    });
+                }
+
+                var nolinklen = st.noLinkText.length;
+                var links = st.linkCount;
+                var listlen = st.listTextLength;
+                if (nolinklen < self.opt.minNoLink * links) {
+                    return '';
+                }
+
+                // isLinklist
+                var rate = st.linkListCount / (st.listCount || 1);
+                rate *= rate;
+                var limit = self.opt.noListRatio * rate * listlen;
+                if (nolinklen < limit) {
+                    return '';
+                }
 
                 return st.noLinkText;
             };
             block.noBodyRate = function() {
-                var val=0;
-
-                val += block.nodes.reduce(function(prev, curr) {
-                    return prev + Util.matchCountTagAttr(curr, 'a', 'href',
-                                                         self.pat.affiliate);
-                }, 0);
+                var val = 0;
+                if (block.leaves.length > 0) {
+                    val += A.reduce(block.leaves, function(prev, curr) {
+                        return prev
+                            + DOM.countMatchTagAttr(curr.node, 'a', 'href',
+                                                    self.pat.affiliate);
+                    }, 0);
+                }
                 val /= 2.0;
-
-                val += self.pat.waste.reduce(function(prev,curr) {
-                    return prev + Util.matchCount(block._nolink, curr);
+                val += A.reduce(self.pat.waste, function(prev,curr) {
+                    return prev + Util.countMatch(block._nolink, curr);
                 }, 0);
-
                 return val;
             };
 
@@ -348,9 +436,10 @@ var extractContent = function(d) {
                 // ignore link list block
                 block._nolink = block.eliminateLinks();
 
-                var c = block._nolink.length;
-                c += + Util.matchCount(block._nolink, self.pat.punctuations);
-                c *= self.opt.punctuationWeight * factor;
+                var c = Util.countMatch(block._nolink, self.pat.punctuations);
+                c *= self.opt.punctuationWeight;
+                c += block._nolink.length;
+                c *= factor;
 
                 // anti-scoring factors
                 var noBodyRate = block.noBodyRate();
@@ -372,8 +461,13 @@ var extractContent = function(d) {
 
             block.merge = function(other) {
                 block.score += other._c1;
-                A.push(block.nodes, other.nodes);
+                block.depth = Math.min(block.depth, other.depth);
+                A.push(block.leaves, other.leaves);
                 return block;
+            };
+
+            block.commonAncestor = function() {
+                return Leaf.commonAncestor.apply(null, block.leaves);
             };
 
             return block;
@@ -389,22 +483,32 @@ var extractContent = function(d) {
                     }
                 };
 
-                var rec = function(node) { // depth-first recursion
+                var rec = function(node, depth, inside) {
+                    // depth-first recursion
+                    if (node instanceof Comment) return r;
+                    if (DOM.matchTag(node, self.pat.ignore)) return r;
+                    if (DOM.matchStyle(node, self.pat.ignoreStyle)) return r;
                     var children = node.childNodes;
                     var sep = self.pat.sep;
                     var len = children.length;
+                    var flags = {
+                        form: inside.form || DOM.matchTag(node, self.pat.form),
+                        link: inside.link || DOM.matchTag(node, self.pat.a),
+                        list: inside.list || DOM.matchTag(node, self.pat.list),
+                        li: inside.li || DOM.matchTag(node, self.pat.li)
+                    };
                     for (var i=0; i < len; i++) {
                         var c = children[i];
-                        var f = DOM.tagMatch(c, sep);
+                        var f = DOM.matchTag(c, sep);
                         flush(f);
-                        rec(c, r, buf);
+                        rec(c, depth+1, flags);
                         flush(f);
                     }
-                    if (!len) buf.push(node);
+                    if (!len) buf.push(new Leaf(node, depth, flags));
                     return r;
                 };
 
-                rec(node);
+                rec(node, 0, {});
                 flush(true);
 
                 return r;
@@ -425,7 +529,6 @@ var extractContent = function(d) {
             var blocks = Block.split(d.body);
             var last;
 
-            alert(blocks.length);
             for (var i=0, len=blocks.length; i < len; i++) {
                 var block = blocks[i];
                 if (last) {
@@ -453,53 +556,72 @@ var extractContent = function(d) {
                 }
             }
 
-            var best=A.first(res.sort(function(a,b){return b.score-a.score;}));
-            if (best) self.content = best.nodes;
+            self.blocks = res.sort(function(a,b){return b.score-a.score;});
+            var best = A.first(self.blocks);
+            if (best) {
+                self.content = best.leaves;
+            }
 
             return self;
         };
 
         self.asNode = function() {
-            return self.content.reduce(function(prev,curr) {
-                return DOM.commonAncestor(prev,curr);
-            });
+            return Leaf.commonAncestor.apply(null, self.content);
         };
 
-        self.asNodeArray = function() {
+        self.asLeaves = function() {
             return self.content;
         };
 
         self.asText = function() {
-            return self.content.reduce(function(prev,curr) {
-                return prev + curr.textContent;
+            if (self.content.length < 1) return '';
+            return A.reduce(self.content, function(prev,curr) {
+                return prev + curr.node.textContent;
             }, '');
         };
 
         return self;
     };
 
-    var extractor = new Heuristics();
+    var extrct = new Heuristics({debug: false}).extract(d);
 
-//     return d.createTextNode(extractor.extract(d).asText());
+    if (!extrct.opt.debug) {
+        var node = extrct.asNode();
+        if (node != d.body) {
+            return node.cloneNode(true);
+        }
+        return d.createTextNode(extrct.asText());
+    }
 
-//     var node = extractor.extract(d).asNode();
-//     alert(node.tagName);
-//     return node.cloneNode(true);
+    // debug
+    var div = d.createElement('div');
+    var ul = d.createElement('ul');
+    A.forEach(extrct.blocks, function(b) {
+        var li = d.createElement('li');
+        li.appendChild(d.createTextNode(b.score));
+        var ul2 = d.createElement('ul');
+        A.forEach(b.leaves, function(v){
+            v = v.node;
+            var s = v.tagName || v.textContent || Util.dump(v);
+            s = s.replace(/\s+/g, '');
+            var li2 = d.createElement('li');
+            s = v.nodeName + ': ' + (s.length ? s : '<empty>');
+            li2.appendChild(d.createTextNode(s));
+            ul2.appendChild(li2);
+        });
+        li.appendChild(ul2);
+        ul.appendChild(li);
+    });
+    div.appendChild(ul);
 
-    return d.createTextNode(extractor.extract(d).asNodeArray().map(function(v){
-        return v.tagName||v.textContent||'';
-    }).join(', '));
-
-//     var e1 = d.getElementsByTagName('h1')[0];
-//     var e2 = d.getElementsByTagName('h1')[0];
-//     var e = DOM.commonAncestor(e1,e2);
-//     alert(e);
-
-    // test
-//     var e = d.createElement('a');
-//     e.href = 'http://orezdnu.org/';
-//     var text = d.createTextNode('orezdnu.org');
-//     e.appendChild(text);
-
-//     return e;
+    return div;
 };
+
+(function(){
+    var e = extractContent(document);
+    var b = document.body;
+    while (b.firstChild) {
+        b.removeChild(b.firstChild);
+    }
+    b.appendChild(e);
+})();
