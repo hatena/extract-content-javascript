@@ -286,7 +286,105 @@ var extractContent = function(d) {
         }
     };
 
-    var LayeredExtractor = function() {
+    var Leaf = Util.inherit(function(node, depth, inside) {
+        var leaf = { node: node, depth: depth, inside: inside };
+
+        leaf.statistics = function() {
+            var t = (node.textContent || '').replace(/\s+/g, ' ');
+            var l = t.length;
+            return {
+                text: t,
+                noLinkText: (inside.link || inside.form) ? '' : t,
+                listTextLength: inside.list ? l : 0,
+                noListTextLength: inside.list ? 0 : l,
+                linkCount: inside.link ? 1 : 0,
+                listCount: inside.li ? 1 : 0,
+                linkListCount: (inside.li && inside.link) ? 1 : 0
+            };
+        };
+
+        return leaf;
+    }, {
+        commonAncestor: function(/* leaves */) {
+            var ar = A.map(arguments, function(v){ return v.node; });
+            if (ar.length < 2) {
+                return ar[0];
+            }
+            return A.reduce(ar, function(prev, curr) {
+                return DOM.commonAncestor(prev, curr);
+            });
+        },
+        mergeStatistics: function(a, b) {
+            var r = {};
+            for (var prop in a) {
+                r[prop] = a[prop] + b[prop];
+            }
+            return r;
+        }
+    });
+
+    var Content = function(c) {
+        var self = { _content: c };
+
+        self.asLeaves = function(){ return self._content; };
+        self.asNode = function() {
+            alert('asNode1');
+            if (self._node) return self._node;
+            alert('asNode2');
+            self._node = Leaf.commonAncestor.apply(null, self._content);
+            alert('asNode3');
+            return self._node;
+        };
+        self.asText = function() {
+            if (self._text) return self._text;
+            if (self._content.length < 1) return '';
+            self._text = A.reduce(self._content, function(prev,curr) {
+                var s = curr.node.textContent;
+                s = s.replace(/^\s+/g,'').replace(/\s+$/g,'');
+                s = s.replace(/\s+/g,' ');
+                return prev + s;
+            }, '');
+            return self._text;
+        };
+
+        return self;
+    };
+
+    var LayeredExtractor = function(/* handler, filter */) {
+        var self = { handler: arguments[0] || [], filter: arguments[1] || {} };
+
+        self.addHandler = function(handler) {
+            self.handler.push(handler);
+            return self;
+        };
+
+        self.filterFor = function(url) {
+            // TODO
+        };
+
+        self.extract = function(d) {
+            var url = d.location.href;
+            var res = { title: d.title };
+            for (var i=0, len=self.handler.length; i < len; i++) {
+                var content = self.handler[i].extract(d, url, res);
+                if (!content) continue;
+
+                var f = self.filterFor(url);
+                if (f) {
+                    content = f.filter(content);
+                }
+
+                content = new Content(content);
+                if (!content.asText().length) continue;
+                res.content = content;
+                res.isSuccess = true;
+                res.engine = res.engine || self.handler[i];
+                break;
+            }
+            return res;
+        };
+
+        return self;
     };
 
     var Heuristics = function(/*option, pattern*/) {
@@ -298,7 +396,7 @@ var extractContent = function(d) {
                 factor: {
                     decay:      0.90,
                     noBody:     0.72,
-                    continuous: 1.62,
+                    continuous: 1.62
                 },
                 punctuationWeight: 10,
                 minNoLink: 8,
@@ -334,48 +432,12 @@ var extractContent = function(d) {
                     } ]
                 ],
                 ignoreStyle: {
-                    display: 'none'
+                    display: 'none',
+                    visibility: 'hidden'
                 },
                 punctuations: /[。、．，！？]|\.[^A-Za-z0-9]|,[^0-9]|!|\?/
             })
         };
-
-        var Leaf = Util.inherit(function(node, depth, inside) {
-            var leaf = { node: node, depth: depth, inside: inside };
-
-            leaf.statistics = function() {
-                var t = (node.textContent || '').replace(/\s+/g, ' ');
-                var l = t.length;
-                return {
-                    text: t,
-                    noLinkText: (inside.link || inside.form) ? '' : t,
-                    listTextLength: inside.list ? l : 0,
-                    noListTextLength: inside.list ? 0 : l,
-                    linkCount: inside.link ? 1 : 0,
-                    listCount: inside.li ? 1 : 0,
-                    linkListCount: (inside.li && inside.link) ? 1 : 0
-                };
-            };
-
-            return leaf;
-        }, {
-            commonAncestor: function(/* leaves */) {
-                var ar = A.map(arguments, function(v){ return v.node; });
-                if (ar.length < 2) {
-                    return ar[0];
-                }
-                return A.reduce(ar, function(prev, curr) {
-                    return DOM.commonAncestor(prev, curr);
-                });
-            },
-            mergeStatistics: function(a, b) {
-                var r = {};
-                for (var prop in a) {
-                    r[prop] = a[prop] + b[prop];
-                }
-                return r;
-            }
-        });
 
         var Block = Util.inherit(function(leaves) {
             leaves = A.filter(leaves, function(v) {
@@ -515,7 +577,7 @@ var extractContent = function(d) {
             }
         });
 
-        self.extract = function(d) {
+        self.extract = function(d/*, url, res*/) {
             var isNoContent = function(v){
                 return d.getElementsByTagName(v).length != 0;
             };
@@ -562,59 +624,48 @@ var extractContent = function(d) {
                 self.content = best.leaves;
             }
 
-            return self;
-        };
-
-        self.asNode = function() {
-            return Leaf.commonAncestor.apply(null, self.content);
-        };
-
-        self.asLeaves = function() {
             return self.content;
-        };
-
-        self.asText = function() {
-            if (self.content.length < 1) return '';
-            return A.reduce(self.content, function(prev,curr) {
-                return prev + curr.node.textContent;
-            }, '');
         };
 
         return self;
     };
 
-    var extrct = new Heuristics({debug: false}).extract(d);
+    var debug = false;
+    var res = new LayeredExtractor([
+        new Heuristics({debug: debug})
+    ]).extract(d);
 
-    if (!extrct.opt.debug) {
-        var node = extrct.asNode();
+    if (!res.isSuccess) {
+        return d.createTextNode('failed');
+    } else if (!debug) {
+        var node = res.content.asNode();
         if (node != d.body) {
             return node.cloneNode(true);
         }
-        return d.createTextNode(extrct.asText());
-    }
-
-    // debug
-    var div = d.createElement('div');
-    var ul = d.createElement('ul');
-    A.forEach(extrct.blocks, function(b) {
-        var li = d.createElement('li');
-        li.appendChild(d.createTextNode(b.score));
-        var ul2 = d.createElement('ul');
-        A.forEach(b.leaves, function(v){
-            v = v.node;
-            var s = v.tagName || v.textContent || Util.dump(v);
-            s = s.replace(/\s+/g, '');
-            var li2 = d.createElement('li');
-            s = v.nodeName + ': ' + (s.length ? s : '<empty>');
-            li2.appendChild(d.createTextNode(s));
-            ul2.appendChild(li2);
+        return d.createTextNode(res.content.asText());
+    } else { // debug
+        var blocks = res.engine.blocks || [ res.content.asLeaves() ];
+        var div = d.createElement('div');
+        var ul = d.createElement('ul');
+        A.forEach(blocks, function(b) {
+            var li = d.createElement('li');
+            li.appendChild(d.createTextNode(b.score));
+            var ul2 = d.createElement('ul');
+            A.forEach(b.leaves, function(v){
+                v = v.node;
+                var s = v.tagName || v.textContent || Util.dump(v);
+                s = s.replace(/\s+/g, '');
+                var li2 = d.createElement('li');
+                s = v.nodeName + ': ' + (s.length ? s : '<empty>');
+                li2.appendChild(d.createTextNode(s));
+                ul2.appendChild(li2);
+            });
+            li.appendChild(ul2);
+            ul.appendChild(li);
         });
-        li.appendChild(ul2);
-        ul.appendChild(li);
-    });
-    div.appendChild(ul);
-
-    return div;
+        div.appendChild(ul);
+        return div;
+    }
 };
 
 (function(){
