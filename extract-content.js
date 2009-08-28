@@ -43,7 +43,7 @@ var extractContent = function(d) {
 
     var A = {};
     A.indexOf = Array.indexOf || function(self, elt/*, from*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         var from = Number(arguments[argi++]) || 0;
         from = (from < 0) ? Math.ceil(from) : Math.floor(from);
@@ -54,7 +54,7 @@ var extractContent = function(d) {
         return -1;
     };
     A.filter = Array.filter || function(self, fun/*, thisp*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != "function") {
             throw new TypeError('Array.prototype.filter: not a function');
@@ -70,7 +70,7 @@ var extractContent = function(d) {
         return rv;
     };
     A.forEach = Array.forEach ||  function(self, fun/*, thisp*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != 'function') {
             throw new TypeError('Array.prototype.forEach: not a function');
@@ -81,7 +81,7 @@ var extractContent = function(d) {
         }
     };
     A.every = Array.every || function(self, fun/*, thisp*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != 'function') {
             throw new TypeError('Array.prototype.every: not a function');
@@ -96,7 +96,7 @@ var extractContent = function(d) {
         return true;
     };
     A.map = Array.map || function(self, fun/*, thisp*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != 'function') {
             throw new TypeError('Array.prototype.map: not a function');
@@ -111,7 +111,7 @@ var extractContent = function(d) {
         return rv;
     };
     A.some = Array.some || function(self, fun/*, thisp*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != "function") {
             throw new TypeError('Array.prototype.some: not a function');
@@ -126,14 +126,14 @@ var extractContent = function(d) {
         return false;
     };
     A.reduce = Array.reduce || function(self, fun/*, initial*/) {
-        var argi = 1;
+        var argi = 2;
         var len = self.length;
         if (typeof fun != 'function') {
             throw TypeError('Array.prototype.reduce: not a function ');
         }
         var i = 0;
         var prev;
-        if (arguments.length >= argi+2) {
+        if (arguments.length > argi) {
             var rv = arguments[argi++];
         } else {
             do {
@@ -194,7 +194,16 @@ var extractContent = function(d) {
                 }
             }
             return style;
-         },
+        },
+        text: function(node) {
+            if (typeof node.textContent != 'undefined') {
+                return node.textContent;
+            } else if (node.nodeName == '#text') {
+                return node.nodeValue;
+            } else if (typeof node.innerText != 'undefined') {
+                return node.innerText; // IE
+            }
+        },
         ancestors: function(e) {
             var body = e.ownerDocument.body;
             var r = [];
@@ -290,7 +299,7 @@ var extractContent = function(d) {
         var leaf = { node: node, depth: depth, inside: inside };
 
         leaf.statistics = function() {
-            var t = (node.textContent || '').replace(/\s+/g, ' ');
+            var t = (DOM.text(node) || '').replace(/\s+/g, ' ');
             var l = t.length;
             return {
                 text: t,
@@ -328,18 +337,15 @@ var extractContent = function(d) {
 
         self.asLeaves = function(){ return self._content; };
         self.asNode = function() {
-            alert('asNode1');
             if (self._node) return self._node;
-            alert('asNode2');
             self._node = Leaf.commonAncestor.apply(null, self._content);
-            alert('asNode3');
             return self._node;
         };
         self.asText = function() {
             if (self._text) return self._text;
             if (self._content.length < 1) return '';
             self._text = A.reduce(self._content, function(prev,curr) {
-                var s = curr.node.textContent;
+                var s = DOM.text(curr.node);
                 s = s.replace(/^\s+/g,'').replace(/\s+$/g,'');
                 s = s.replace(/\s+/g,' ');
                 return prev + s;
@@ -441,7 +447,7 @@ var extractContent = function(d) {
 
         var Block = Util.inherit(function(leaves) {
             leaves = A.filter(leaves, function(v) {
-                var s = v.node.textContent || '';
+                var s = DOM.text(v.node) || '';
                 s = s.replace(/\s+/g, '');
                 return s.length != 0;
             });
@@ -547,7 +553,7 @@ var extractContent = function(d) {
 
                 var rec = function(node, depth, inside) {
                     // depth-first recursion
-                    if (node instanceof Comment) return r;
+                    if (node.nodeName == '#comment') return r;
                     if (DOM.matchTag(node, self.pat.ignore)) return r;
                     if (DOM.matchStyle(node, self.pat.ignoreStyle)) return r;
                     var children = node.childNodes;
@@ -631,6 +637,32 @@ var extractContent = function(d) {
     };
 
     var debug = false;
+//     { // tmp
+//         var ex = new Heuristics();
+//         ex.extract(d);
+//         var blocks = ex.blocks || [ ex.content.asLeaves() ];
+//         var div = d.createElement('div');
+//         var ul = d.createElement('ul');
+//         A.forEach(blocks, function(b) {
+//             var li = d.createElement('li');
+//             li.appendChild(d.createTextNode(b.score));
+//             var ul2 = d.createElement('ul');
+//             A.forEach(b.leaves, function(v){
+//                 v = v.node;
+//                 var s = v.tagName || DOM.text(v) || Util.dump(v);
+//                 s = s.replace(/\s+/g, '');
+//                 var li2 = d.createElement('li');
+//                 s = v.nodeName + ': ' + (s.length ? s : '<empty>');
+//                 li2.appendChild(d.createTextNode(s));
+//                 ul2.appendChild(li2);
+//             });
+//             li.appendChild(ul2);
+//             ul.appendChild(li);
+//         });
+//         div.appendChild(ul);
+//         return div;
+//     }
+
     var res = new LayeredExtractor([
         new Heuristics({debug: debug})
     ]).extract(d);
@@ -653,7 +685,7 @@ var extractContent = function(d) {
             var ul2 = d.createElement('ul');
             A.forEach(b.leaves, function(v){
                 v = v.node;
-                var s = v.tagName || v.textContent || Util.dump(v);
+                var s = v.tagName || DOM.text(v) || Util.dump(v);
                 s = s.replace(/\s+/g, '');
                 var li2 = d.createElement('li');
                 s = v.nodeName + ': ' + (s.length ? s : '<empty>');
