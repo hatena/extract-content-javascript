@@ -100,7 +100,8 @@
 
     new Libs(url, null).loadEach(list, callback);
 })('http://labs.orezdnu.org/js/', [
-    [ 'extract-content.js', 'WWW.LayeredExtractor' ]
+    [ 'extract-content.js', 'WWW.LayeredExtractor' ],
+    [ 'scoring-words.js', 'Scoring.RelativeWords' ]
 ], function(l) {
     var Util = {
         inherit: function(child,parent) {
@@ -397,42 +398,13 @@
         }
     };
 
-    if (typeof l.extractContentTest == 'undefined') {
-        var extractContentTest = {};
+    if (typeof l.suggestTagTest == 'undefined') {
+        var suggestTagTest = {};
     }
-    var debug = l.extractContentTest.debug;
+    var debug = l.suggestTagTest.debug;
 
-    l.extractContentTest.extractContent = function(d) {
+    l.suggestTagTest.suggestTags = function(d, tags) {
         if (!d.body) return null;
-
-        if (l.extractContentTest.only == 'Heuristics') {
-            // test only Heuristics handler
-            var ex = new WWW.LayeredExtractor.Handler.Heuristics();
-            ex.extract(d);
-            var blocks = ex.blocks || [ ex.content.asLeaves() ];
-            var div = d.createElement('div');
-            var ul = d.createElement('ul');
-            A.forEach(blocks, function(b) {
-                var li = d.createElement('li');
-                li.appendChild(d.createTextNode(b.score));
-                var ul2 = d.createElement('ul');
-                A.forEach(b.leaves, function(v){
-                    v = v.node;
-                    var s = v.tagName || DOM.text(v) || Util.dump(v);
-                    s = s.replace(/\s+/g, '');
-                    var li2 = d.createElement('li');
-                    s = v.nodeName + ': ' + (s.length ? s : '<empty>');
-                    li2.appendChild(d.createTextNode(s));
-                    ul2.appendChild(li2);
-                });
-                li.appendChild(ul2);
-                ul.appendChild(li);
-            });
-            div.appendChild(ul);
-            return div;
-        }
-
-        /* TEST for layred handlers */
 
         var ex = new WWW.LayeredExtractor;
 //         ex.addHandler( ex.factory.getHandler('Description') );
@@ -441,51 +413,153 @@
         ex.addHandler( ex.factory.getHandler('Heuristics') );
         var res = ex.extract(d);
 
-        if (!res.isSuccess) {
-            return d.createTextNode('failed');
-        } else if (!debug) {
-            if (l.extractContentTest.asText) {
-                return d.createTextNode(res.content.asText());
-            }
-            var node = res.content.asNode();
-            if (node != d.body) {
-                return node.cloneNode(true);
-            }
-        } else { // debug
-            var blocks = res.engine.blocks || [ res.content.asLeaves() ];
-            var div = d.createElement('div');
-            var ul = d.createElement('ul');
-            A.forEach(blocks, function(b) {
-                var li = d.createElement('li');
-                li.appendChild(d.createTextNode(b.score));
-                var ul2 = d.createElement('ul');
-                A.forEach(b.leaves, function(v){
-                    v = v.node;
-                    var s = v.tagName || DOM.text(v) || Util.dump(v);
-                    s = s.replace(/\s+/g, '');
-                    var li2 = d.createElement('li');
-                    s = v.nodeName + ': ' + (s.length ? s : '<empty>');
-                    li2.appendChild(d.createTextNode(s));
-                    ul2.appendChild(li2);
-                });
-                li.appendChild(ul2);
-                ul.appendChild(li);
-            });
-            div.appendChild(ul);
-            return div;
-        }
+        if (!res.isSuccess) return null;
+
+        var sc = new Scoring.RelativeWords();
+        sc.addEngine( sc.factory.getEngine('TfIdf') );
+        /* FIXME: other engines */
+
+        return sc.top(res, tags);
     };
 
-    l.extractContentTest.doTest = function() {
-        var e = l.extractContentTest.extractContent(document);
-        var b = document.body;
-        while (b.firstChild) {
-            b.removeChild(b.firstChild);
+    l.suggestTagTest.doTest = function() {
+        var limit = l.suggestTagTest.limit || 5;
+        var tags = l.suggestTagTest.data || {
+            '2008': 1,
+            '2009': 5,
+            'algorithm': 5,
+            'anime': 2,
+            'art': 2,
+            'book': 9,
+            'browser': 1,
+            'color': 1,
+            'comic': 4,
+            'communication': 1,
+            'compiler': 2,
+            'conference': 1,
+            'continuation': 1,
+            'copyright': 2,
+            'coq': 2,
+            'cpan': 2,
+            'cpp': 20,
+            'css': 2,
+            'cv': 1,
+            'ddns': 4,
+            'debian': 10,
+            'debug': 6,
+            'design': 2,
+            'diy': 2,
+            'dom': 3,
+            'education': 7,
+            'emacs': 15,
+            'english': 4,
+            'firefox': 14,
+            'flash': 4,
+            'font': 10,
+            'gadget': 1,
+            'git': 4,
+            'gnuplot': 1,
+            'graph': 1,
+            'gui': 1,
+            'hardware': 3,
+            'haskell': 1,
+            'hatena': 23,
+            'haxe': 1,
+            'html': 1,
+            'ie': 1,
+            'illusion': 1,
+            'illustrator': 2,
+            'image': 4,
+            'javascript': 33,
+            'javascrpit': 1,
+            'keyboard': 1,
+            'kurobox': 10,
+            'language': 18,
+            'lecture': 1,
+            'library': 3,
+            'life': 14,
+            'linux': 25,
+            'lisp': 2,
+            'local': 1,
+            'logic': 3,
+            'mail': 2,
+            'math': 6,
+            'mobile': 1,
+            'monad': 1,
+            'music': 4,
+            'mywork': 7,
+            'neta': 66,
+            'network': 8,
+            'nlp': 3,
+            'ocaml': 3,
+            'paper': 6,
+            'pdf': 8,
+            'perl': 23,
+            'photo': 2,
+            'photoshop': 1,
+            'plugin': 1,
+            'postfix': 1,
+            'presentation': 6,
+            'programming': 22,
+            'proof': 2,
+            'puzzle': 1,
+            'reference': 15,
+            'research': 13,
+            'rfc': 3,
+            'ruby': 14,
+            'science': 3,
+            'security': 4,
+            'sed': 1,
+            'server': 3,
+            'sf': 2,
+            'shop': 3,
+            'skk': 4,
+            'smb': 2,
+            'sound': 2,
+            'ssh': 7,
+            'ssl': 1,
+            'standard': 3,
+            'stl': 1,
+            'template': 2,
+            'test': 3,
+            'tex': 7,
+            'thrift': 1,
+            'tips': 9,
+            'tutorial': 6,
+            'twist': 1,
+            'typeset': 1,
+            'ugomemo': 2,
+            'ui': 2,
+            'unicode': 4,
+            'vfx': 4,
+            'vim': 5,
+            'vimperator': 7,
+            'viper': 1,
+            'virus': 2,
+            'vpn': 1,
+            'web': 16,
+            'windows': 14,
+            'workshop': 4,
+            'xml': 3,
+            'zsh': 5
+        };
+        var suggested = l.suggestTagTest.suggestTags(document, tags);
+        if (!suggested) return;
+
+        var d = document;
+        var ul = d.createElement('ul');
+        var len = suggested.length;
+        if (len > limit) len = limit;
+        for (var i=0; i<len; i++) {
+            var li = d.createElement('li');
+            var t = suggested[i];
+            li.appendChild(d.createTextNode(t.word + ' (' + t.score + ')'));
+            ul.appendChild(li);
         }
-        b.appendChild(e);
+        d.body.appendChild(ul);
     };
 
-    if (l.extractContentTest.auto) {
-        l.extractContentTest.doTest();
+    if (l.suggestTagTest.auto) {
+        l.suggestTagTest.doTest();
     }
 });
