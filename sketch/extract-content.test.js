@@ -108,6 +108,8 @@
         }
     };
 
+    /* library loader */
+
     var A = {
         filter: Array.filter || function(self, fun/*, thisp*/) {
             var argi = 2;
