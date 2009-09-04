@@ -125,6 +125,21 @@
             }
             return rv;
         },
+        every: Array.every || function(self, fun/*, thisp*/) {
+            var argi = 2;
+            var len = self.length;
+            if (typeof fun != 'function') {
+                throw new TypeError('A.every: not a function');
+            }
+            var thisp = arguments[argi++];
+            for (var i = 0; i < len; i++) {
+                if (i in self &&
+                    !fun.call(thisp, self[i], i, self)) {
+                    return false;
+                }
+            }
+            return true;
+        },
         reduce: Array.reduce || function(self, fun/*, initial*/) {
             var argi = 2;
             var len = self.length;
@@ -176,7 +191,9 @@
             var f = arguments[i++] || function(){};
             if (!arr.length) { f(self.l); return; }
             var cache = arguments[i++];
-            var [script, cond] = arr.shift();
+            var head = arr.shift();
+            var script = head[0];
+            var cond = head[1];
             self.load(dir + script, cache);
             self.wait(cond instanceof Array ? cond : [cond],
                       function(){self.loadEach(dir,arr,f,cache)});
@@ -193,7 +210,7 @@
                 return typeof v=='function'
                     ? v(l) : A.reduce(v.split('.'), r,l);
             };
-            if (conds.every(f)) {
+            if (A.every(conds, f)) {
                 callback(l);
             } else if (t++ < tt) {
                 var next = function(){self._wait(conds,callback,l,tt,t);};
