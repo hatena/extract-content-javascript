@@ -144,8 +144,55 @@
         l.SuggestTagTest.doTest = function() {
             var limit = l.SuggestTagTest.limit || 5;
 
-            var suggested = ExtractContentJS.suggestTagsForDocument(d, tags);
+            var timer = new ExtractContentJS.Lib.Util.BenchmarkTimer();
+
+            var suggestTagsForDocument = function(d, tags) {
+                if (!d.body) return null;
+                var ns = ExtractContentJS;
+
+                var ex = new ns.LayeredExtractor();
+//                 ex.addHandler( ex.factory.getHandler('Description') );
+//                 ex.addHandler( ex.factory.getHandler('Scraper'));
+//                 ex.addHandler( ex.factory.getHandler('GoogleAdsence') );
+                ex.addHandler( ex.factory.getHandler('Heuristics') );
+                timer.start('extract');
+                var res = ex.extract(d);
+                timer.stop('extract');
+
+                if (!res.isSuccess) return null;
+
+                timer.start('suggest');
+                var s = ns.suggestTags(res.url, res.title, res.content, tags);
+                timer.stop('suggest');
+
+                return s;
+            };
+
+            var suggested = suggestTagsForDocument(d, tags);
+
             if (!suggested) return;
+
+            {
+                var dlTimer = d.createElement('dl');
+
+                var dtExtract = d.createElement('dt');
+                dtExtract.appendChild(d.createTextNode('extract'));
+                var ddExtract = d.createElement('dd');
+                var timeExtract = timer.get('extract').elapsed;
+                ddExtract.appendChild(d.createTextNode(timeExtract+'msec'));
+                dlTimer.appendChild(dtExtract);
+                dlTimer.appendChild(ddExtract);
+
+                var dtSuggest = d.createElement('dt');
+                dtSuggest.appendChild(d.createTextNode('suggest'));
+                var ddSuggest = d.createElement('dd');
+                var timeSuggest = timer.get('suggest').elapsed;
+                ddSuggest.appendChild(d.createTextNode(timeSuggest+'msec'));
+                dlTimer.appendChild(dtSuggest);
+                dlTimer.appendChild(ddSuggest);
+
+                d.body.appendChild(dlTimer);
+            }
 
             var ul = d.createElement('ul');
             var len = suggested.length;

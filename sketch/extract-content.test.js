@@ -50,12 +50,16 @@
 
             /* TEST for layred handlers */
 
-            var ex = new ExtractContentJS.LayeredExtractor;
+            var timer = new ExtractContentJS.Lib.Util.BenchmarkTimer();
+
+            var ex = new ExtractContentJS.LayeredExtractor();
 //             ex.addHandler( ex.factory.getHandler('Description') );
 //             ex.addHandler( ex.factory.getHandler('Scraper'));
 //             ex.addHandler( ex.factory.getHandler('GoogleAdsence') );
             ex.addHandler( ex.factory.getHandler('Heuristics') );
+            timer.start('extract');
             var res = ex.extract(d);
+            var time = timer.stop('extract').elapsed;
 
             if (!res.isSuccess) {
                 return d.createTextNode('failed');
@@ -72,6 +76,11 @@
             } else { // debug
                 var blocks = res.engine.blocks || [ res.content.asLeaves() ];
                 var div = d.createElement('div');
+
+                var pTimer = d.createElement('p');
+                pTimer.appendChild(d.createTextNode(time+'msec'));
+                div.appendChild(pTimer);
+
                 var ul = d.createElement('ul');
                 A.forEach(blocks, function(b) {
                     var li = d.createElement('li');
@@ -90,6 +99,7 @@
                     ul.appendChild(li);
                 });
                 div.appendChild(ul);
+
                 return div;
             }
         };
