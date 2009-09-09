@@ -190,6 +190,7 @@
         self.load = function(src/*, cache*/) {
             tag = document.createElement('script');
             tag.type = 'text/javascript';
+            tag.charset = 'UTF-8';
             var del = src.match(/\?/) ? '&' : '?';
             tag.src = arguments[1] ? src : src + del + encodeURI(new Date());
             document.getElementsByTagName('head')[0].appendChild(tag);
