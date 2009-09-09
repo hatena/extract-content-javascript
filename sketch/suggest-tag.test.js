@@ -453,7 +453,7 @@
                 var ex = new ns.LayeredExtractor();
 //                 ex.addHandler( ex.factory.getHandler('Description') );
 //                 ex.addHandler( ex.factory.getHandler('Scraper'));
-//                 ex.addHandler( ex.factory.getHandler('GoogleAdsence') );
+//                 ex.addHandler( ex.factory.getHandler('GoogleAdSection') );
                 ex.addHandler( ex.factory.getHandler('Heuristics') );
                 timer.start('extract');
                 var res = ex.extract(d);

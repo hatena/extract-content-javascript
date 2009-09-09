@@ -55,7 +55,7 @@
             var ex = new ExtractContentJS.LayeredExtractor();
 //             ex.addHandler( ex.factory.getHandler('Description') );
 //             ex.addHandler( ex.factory.getHandler('Scraper'));
-//             ex.addHandler( ex.factory.getHandler('GoogleAdsence') );
+//             ex.addHandler( ex.factory.getHandler('GoogleAdSection') );
             ex.addHandler( ex.factory.getHandler('Heuristics') );
             timer.start('extract');
             var res = ex.extract(d);
@@ -63,19 +63,29 @@
 
             if (!res.isSuccess) {
                 return d.createTextNode('failed');
-            } else if (!debug) {
+            }
+
+            var div = d.createElement('div');
+            var h1 = d.createElement('h1');
+            h1.appendChild(d.createTextNode(res.engine.name));
+            div.appendChild(h1);
+
+            if (!debug) {
                 if (l.ExtractContentTest.asText) {
-                    return d.createTextNode(res.content.toString());
+                    var text = res.content.toString();
+                    div.appendChild(d.createTextNode(text));
                 } else if (l.ExtractContentTest.asTextFragment) {
-                    return d.createTextNode(res.content.asTextFragment());
+                    var text = res.content.asTextFragment();
+                    div.appendChild(d.createTextNode(text));
+                } else {
+                    var node = res.content.asNode();
+                    if (node != d.body) {
+                        div.appendChild(node.cloneNode(true));
+                    }
                 }
-                var node = res.content.asNode();
-                if (node != d.body) {
-                    return node.cloneNode(true);
-                }
+                return div;
             } else { // debug
                 var blocks = res.engine.blocks || [ res.content.asLeaves() ];
-                var div = d.createElement('div');
 
                 var pTimer = d.createElement('p');
                 pTimer.appendChild(d.createTextNode(time+'msec'));
@@ -99,9 +109,9 @@
                     ul.appendChild(li);
                 });
                 div.appendChild(ul);
-
-                return div;
             }
+
+            return div;
         };
 
         l.ExtractContentTest.doTest = function() {
