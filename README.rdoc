@@ -14,7 +14,7 @@
 [lib/lib.js] 共通するもの
 [lib/extract-content.js] 本文抽出
 
-リポジトリのルートでmakeするとこれらを連結した extract-content-allinone.js が生成される.
+リポジトリのルートでmake packageするとこれらを連結した extract-content-all.js が生成される.
 
 実際の使い方を詳しく見たくなったら:
 [sketch/extract-content.test.js] 本文抽出テスト
