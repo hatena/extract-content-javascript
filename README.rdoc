@@ -68,6 +68,8 @@ Copyright (C) 2009 INA Lintaro / Hatena. All rights reserved.
 
 Copyright (c) 2007/2008 Nakatani Shuyo / Cybozu Labs Inc. All rights reserved.
 
+- http://labs.cybozu.co.jp/blog/nakatani/2007/09/web_1.html
+
 == LICENCE
 
 MIT License
