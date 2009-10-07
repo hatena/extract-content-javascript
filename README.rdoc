@@ -1,4 +1,7 @@
+
 = ExtractContentJS
+
+本文抽出 JavaScript ライブラリ
 
 == やれること
 
@@ -10,37 +13,21 @@
 基本的には以下をこの順に読み込めば動く:
 [lib/lib.js] 共通するもの
 [lib/extract-content.js] 本文抽出
-[lib/scoring-words.js] タグのスコアリング
 
 リポジトリのルートでmakeするとこれらを連結した extract-content-allinone.js が生成される.
 
 実際の使い方を詳しく見たくなったら:
 [sketch/extract-content.test.js] 本文抽出テスト
-[sketch/suggest-tag.test.js] おすすめタグテスト
+[lib/scoring-words.js] タグのスコアリング(サンプル)
 
 == 使い方
-
-=== タグをおすすめするインタフェース
-
-==== ExtractContentJS.suggestTags(url, title, body, tags)
-- 文書文字列とタグを渡しておすすめしてもらう
-- url, title, body: string
-- tags[word:string] = weight
-  - タグからその重み(document frequency)へのハッシュ
-- 返り値: [ { word: w, score: s } ]
-  - タグ, スコアを持つハッシュの配列
-  - スコアの高い順にソート済み
-  - スコアが0だったタグは除外されている
-
-==== ExtractContentJS.suggestTagsForDocument(doc, tags)
-- 文書のDOMオブジェクトとタグを渡しておすすめしてもらう
-- docから本文抽出してからExtractContentJS.suggestTagsを呼ぶ
 
 === 本文抽出インタフェース
 
 本文抽出だけしたい/ハンドラを指定したい場合に使う.
 
 ==== ExtractContentJS.LayeredExtractor
+
   var ex = new ExtractContentJS.LayeredExtractor();
   //ex.addHandler( ex.factory.getHandler('Description') );
   //ex.addHandler( ex.factory.getHandler('Scraper'));
@@ -58,24 +45,30 @@
 ハンドラはいまのところHeuristicsのみ実装済み.
 
 ==== コンテンツクラス
+
   content.asLeaves(); // 本文だと判定された葉ノードを含む葉クラスインスタンス(後述)の配列を返す
   content.asNode(); // すべての葉ノードの共通の祖先のうち最深のものを返す
   content.asTextFragment(); // asLeaves()に含まれるノードのテキストを連結したものを返す
   content.toString(); // asNode()のtextContentを返す
 
 ==== 葉クラス
+
   leaf.node; // 葉ノード
   leaf.depth; // ノードのbodyからの深さ
 
-=== タグのスコアリングのインタフェース
+== AUTHOR
 
-スコアリングの仕方を調整したいときに使う.
+INA Lintaro
 
-==== ExtractContentJS.RelativeWords
-  function suggestTags(url, title, body, tags) {
-      var sc = new ExtractContentJS.RelativeWords();
-      sc.addEngine( sc.factory.getEngine('TfIdf') );
-      sc.addEngine( sc.factory.getEngine('TitlePosition') );
-      sc.addEngine( sc.factory.getEngine('ContentPosition') );
-      return sc.top({ url: url, title: title, content: body }, tags);
-  }
+== Copryright
+
+Copyright (C) 2009 INA Lintaro / Hatena. All rights reserved.
+
+== Copyright of the original implementation
+
+Copyright (c) 2007/2008 Nakatani Shuyo / Cybozu Labs Inc. All rights reserved.
+
+== LICENCE
+
+MIT License
+
